@@ -1,8 +1,7 @@
 services:
-  # Video Analysis Kit Server
   video-analysis-server:
     build:
-      context: .
+      context: ./server
       dockerfile: Dockerfile
     container_name: video-analysis-server
     ports:
@@ -12,7 +11,7 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
     volumes:
-      - ../data:/app/data:rw
+      - ./data:/app/data:rw
     restart: unless-stopped
     networks:
       - video-analysis-network
@@ -22,6 +21,26 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  video-analysis-client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: video-analysis-client
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+    volumes:
+      - ./client/config:/app/config:ro
+      - ./data:/app/data:rw
+    depends_on:
+      video-analysis-server:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - video-analysis-network
 
 networks:
   video-analysis-network:

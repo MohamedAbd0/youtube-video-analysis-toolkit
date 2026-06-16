@@ -1,7 +1,7 @@
 {
     "mcpServers": {
         "video-analysis-kit": {
-            "url": "http://192.168.1.129:8000/mcp",
+            "url": "http://host.docker.internal:8000/mcp",
             "transport": "streamable-http"
         }
     }

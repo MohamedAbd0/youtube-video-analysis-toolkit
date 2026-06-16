@@ -8,5 +8,5 @@ services:
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
     volumes:
       - ./config:/app/config:ro
-      - /Users/ishamrashik/Desktop/machine-learning-and-ai-projects/agents-tutorials/video-analysis-kit/data:/app/data:rw
+      - ../data:/app/data:rw
     restart: unless-stopped

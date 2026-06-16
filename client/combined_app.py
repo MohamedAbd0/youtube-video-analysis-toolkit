@@ -1,6 +1,8 @@
 import asyncio
 import os
 import streamlit as st
+import urllib.request
+import urllib.error
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from mcp_use import MCPAgent, MCPClient
@@ -18,22 +20,132 @@ from plotly.subplots import make_subplots
 # Set page config
 st.set_page_config(page_title="MCP Powered YouTube Video Analysis Toolkit", page_icon="🚀", layout="wide")
 
+OPENAI_PROVIDER = "OpenAI API"
+LM_STUDIO_PROVIDER = "LM Studio (local)"
+DEFAULT_LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", "http://host.docker.internal:1234/v1")
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def fetch_lm_studio_models(base_url):
+    """Fetch loaded/available model ids from an OpenAI-compatible models endpoint."""
+    models_url = f"{base_url.rstrip('/')}/models"
+    request = urllib.request.Request(models_url, headers={"Accept": "application/json"})
+
+    with urllib.request.urlopen(request, timeout=3) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    return [
+        model["id"]
+        for model in payload.get("data", [])
+        if isinstance(model, dict) and model.get("id")
+    ]
+
+
+def create_chat_llm():
+    provider = st.session_state.get("llm_provider", OPENAI_PROVIDER)
+
+    if provider == LM_STUDIO_PROVIDER:
+        model_name = st.session_state.get("local_model_name", "").strip()
+        base_url = st.session_state.get("lm_studio_base_url", DEFAULT_LM_STUDIO_BASE_URL).strip()
+
+        if not model_name:
+            raise ValueError("Select or enter an LM Studio model before sending a chat message.")
+
+        return ChatOpenAI(
+            model=model_name,
+            api_key="lm-studio",
+            base_url=base_url,
+        )
+
+    model_name = st.session_state.get("openai_model_name", st.session_state.get("model_name", "gpt-4.1"))
+    api_key = st.session_state.get("api_key", "")
+
+    if api_key:
+        return ChatOpenAI(model=model_name, api_key=api_key)
+
+    return ChatOpenAI(model=model_name)
+
+
+def render_model_configuration():
+    st.sidebar.subheader("⚙️ MCP Configuration")
+
+    provider_options = [OPENAI_PROVIDER, LM_STUDIO_PROVIDER]
+    selected_provider = st.session_state.get("llm_provider", OPENAI_PROVIDER)
+    provider_index = provider_options.index(selected_provider) if selected_provider in provider_options else 0
+
+    llm_provider = st.sidebar.radio(
+        "Model Provider",
+        provider_options,
+        index=provider_index,
+        horizontal=True,
+    )
+    st.session_state.llm_provider = llm_provider
+
+    if llm_provider == LM_STUDIO_PROVIDER:
+        base_url = st.sidebar.text_input(
+            "LM Studio Base URL",
+            value=st.session_state.get("lm_studio_base_url", DEFAULT_LM_STUDIO_BASE_URL),
+            help="Use http://host.docker.internal:1234/v1 from Docker, or http://localhost:1234/v1 when running Streamlit locally.",
+        ).strip()
+        st.session_state.lm_studio_base_url = base_url
+
+        if st.sidebar.button("Refresh Local Models", use_container_width=True):
+            fetch_lm_studio_models.clear()
+
+        local_model_name = st.session_state.get("local_model_name", "")
+        try:
+            local_models = fetch_lm_studio_models(base_url)
+            if local_models:
+                model_index = local_models.index(local_model_name) if local_model_name in local_models else 0
+                local_model_name = st.sidebar.selectbox(
+                    "Local Model",
+                    local_models,
+                    index=model_index,
+                    help="Models reported by LM Studio's OpenAI-compatible /v1/models endpoint.",
+                )
+            else:
+                st.sidebar.warning("LM Studio did not return any models.")
+                local_model_name = st.sidebar.text_input(
+                    "Local Model",
+                    value=local_model_name,
+                    help="Enter the LM Studio model identifier manually.",
+                ).strip()
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+            st.sidebar.warning(f"Could not load LM Studio models: {exc}")
+            local_model_name = st.sidebar.text_input(
+                "Local Model",
+                value=local_model_name,
+                help="Enter the LM Studio model identifier manually.",
+            ).strip()
+
+        st.session_state.local_model_name = local_model_name
+        st.session_state.model_name = local_model_name
+        return
+
+    openai_model_name = st.sidebar.text_input(
+        "OpenAI Model",
+        value=st.session_state.get("openai_model_name", st.session_state.get("model_name", "gpt-4.1")),
+        help="Enter the OpenAI model name to use for MCP operations.",
+    ).strip()
+    st.session_state.openai_model_name = openai_model_name
+    st.session_state.model_name = openai_model_name
+
+    api_key = st.sidebar.text_input(
+        "OpenAI API Key",
+        value=st.session_state.get("api_key", ""),
+        type="password",
+        help="Enter your OpenAI API key.",
+    )
+    st.session_state.api_key = api_key
+
+
 # MCP Chat Functions
 async def get_response_async(message, conversation_history=None):
     """Get response from MCP agent with full conversation context"""
     try:
         config_path = "/app/config/mcpServers.json"
         client = MCPClient.from_config_file(config_path)
-        
-        # Get model name and API key from session state
-        model_name = st.session_state.get('model_name', 'gpt-4.1')
-        api_key = st.session_state.get('api_key', '')
-        
-        # Use API key if provided, otherwise fall back to environment variable
-        if api_key:
-            llm = ChatOpenAI(model=model_name, api_key=api_key)
-        else:
-            llm = ChatOpenAI(model=model_name)
+        llm = create_chat_llm()
         
         agent = MCPAgent(llm=llm, client=client, max_steps=10)
         
@@ -1085,24 +1197,7 @@ def main():
     st.sidebar.title("🚀 Navigation")
     
     # MCP Configuration section
-    st.sidebar.subheader("⚙️ MCP Configuration")
-    
-    # Model name input
-    model_name = st.sidebar.text_input(
-        "Model Name",
-        value=st.session_state.get('model_name', 'gpt-4.1'),
-        help="Enter the model name to use for MCP operations"
-    )
-    st.session_state.model_name = model_name
-    
-    # API key input
-    api_key = st.sidebar.text_input(
-        "API Key",
-        value=st.session_state.get('api_key', ''),
-        type="password",
-        help="Enter your OpenAI API key"
-    )
-    st.session_state.api_key = api_key
+    render_model_configuration()
     
     st.sidebar.markdown("---")
     

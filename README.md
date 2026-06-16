@@ -127,7 +127,7 @@ The client integrates with mcp-use library to:
 ### Prerequisites
 
 - Docker and Docker Compose
-- OpenAI API key
+- OpenAI API key or LM Studio running a local model
 - Python 3.12+ (for local development)
 
 ### Clone the repository
@@ -138,6 +138,13 @@ cd youtube-video-analysis-toolkit
 ```
 
 ### Docker Deployment
+
+**Server and client**:
+```bash
+docker-compose up --build
+# Server will be available at http://localhost:8000
+# Client will be available at http://localhost:8501
+```
 
 **Server only**:
 ```bash
@@ -158,7 +165,9 @@ docker-compose up --build
 ### Web Interface
 
 1. **Access the Streamlit dashboard** at `http://localhost:8501`
-2. **Configure your OpenAI API key** in the sidebar
+2. **Choose your model provider** in the sidebar:
+   - **OpenAI API**: enter an OpenAI model name and API key
+   - **LM Studio (local)**: start the LM Studio local server, then select a local model from the sidebar
 3. **Select the appropriate tab** for your analysis needs:
    - **YouTube Video Chat**: Interactive chatbot for video analysis
    - **Saved Transcripts**: View and manage video transcripts
@@ -218,6 +227,15 @@ All analysis results are stored in the `/data` directory:
 
 ## Configuration
 
+### Model Provider Configuration
+
+The client supports two model provider modes from the sidebar:
+
+- **OpenAI API**: uses `langchain-openai` with the OpenAI API key you enter in the app.
+- **LM Studio (local)**: uses LM Studio's OpenAI-compatible API. When running the Streamlit client in Docker Desktop, the default base URL is `http://host.docker.internal:1234/v1`. When running Streamlit directly on your machine, use `http://localhost:1234/v1`.
+
+The LM Studio model dropdown is populated from the configured base URL's `/models` endpoint. If the model list is unavailable, enter the LM Studio model identifier manually.
+
 ### MCP Server Configuration
 
 Edit `client/config/mcpServers.json` to configure the MCP connection:
@@ -226,14 +244,14 @@ Edit `client/config/mcpServers.json` to configure the MCP connection:
 {
     "mcpServers": {
         "video-analysis-kit": {
-            "url": "http://{your_ip_address}:8000/mcp",
+            "url": "http://host.docker.internal:8000/mcp",
             "transport": "streamable-http"
         }
     }
 }
 ```
 
-Use `ifconfig | grep inet` to find your ip address.
+Use `host.docker.internal` when the client runs in Docker Desktop and the server is published on port 8000.
 
 ### Docker Configuration
 
